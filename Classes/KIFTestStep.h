@@ -275,6 +275,28 @@ typedef KIFTestStepResult (^KIFTestStepExecutionBlock)(KIFTestStep *step, NSErro
 + (id)stepToWaitForNotificationName:(NSString*)name object:(id)object;
 
 /*!
+ @method stepToWaitForNotificationName:object:whileExecutingStep:
+ @abstract A step that waits for an NSNotification emitted during execution of a child step
+ @discussion Useful when step execution causes a notification to be emitted, but executes too quickly for stepToWaitForNotificationName: to observe it.
+ An observer will be registered for the notification before the observedStep is executed.
+ @param name The name of the NSNotification
+ @param object The object to which the step should listen. Nil value will listen to all objects.
+ @result A configured test step.
+ */
++ (id)stepToWaitForNotificationName:(NSString *)name object:(id)object whileExecutingStep:(KIFTestStep *)childStep;
+
+/*!
+ @method stepToWaitForNotificationName:object:timeout:
+ @abstract A step that waits for an NSNotification for a maximum amount of time
+ @discussion Useful when a test requires an asynchronous task to complete, especially when that task does not trigger a visible change in the view hierarchy. Allows for longer requests to complete.
+ @param name The name of the NSNotification
+ @param object The object to which the step should listen. Nil value will listen to all objects.
+ @param timeout Maximum amount of time, in seconds, to wait for the notification.
+ @result A configured test step.
+ */
++ (id)stepToWaitForNotificationName:(NSString *)name object:(id)object timeout:(NSTimeInterval)timeout;
+
+/*!
  @method stepToTapViewWithAccessibilityLabel:
  @abstract A step that taps a particular view in the view hierarchy.
  @discussion The view or accessibility element with the given label is searched for in the view hierarchy. If the element isn't found or isn't currently tappable, then the step will attempt to wait until it is. Once the view is present and tappable, a tap event is simulated in the center of the view or element.
@@ -395,4 +417,12 @@ typedef KIFTestStepResult (^KIFTestStepExecutionBlock)(KIFTestStep *step, NSErro
  */
 + (id)stepToTapRowInTableViewWithAccessibilityLabel:(NSString*)tableViewLabel atIndexPath:(NSIndexPath *)indexPath;
 
+/*!
+ @method stepToTapFirstAvailableRowInTableViewWithAccessibilityLabel:
+ @abstract A step that taps the first visible row in a table view.
+ @discussion This step will get the view with the specified accessibility label and tap the first visible row.
+ @param tableViewLabel Accessibility label of the table view.
+ @result A configured test step.
+ */
++ (id)stepToTapFirstAvailableRowInTableViewWithAccessibilityLabel:(NSString*)tableViewLabel;
 @end

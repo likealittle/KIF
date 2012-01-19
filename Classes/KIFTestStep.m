@@ -26,6 +26,7 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
 @property (nonatomic, retain) id notificationObject;
 @property BOOL notificationOccurred;
 @property BOOL observingForNotification;
+@property (nonatomic, retain) KIFTestStep *childStep;
 
 + (BOOL)_isUserInteractionEnabledForView:(UIView *)view;
 
@@ -47,6 +48,7 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
 @synthesize notificationOccurred;
 @synthesize observingForNotification;
 @synthesize timeout;
+@synthesize childStep;
 
 #pragma mark Class Methods
 
@@ -214,6 +216,11 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
 
 + (id)stepToWaitForNotificationName:(NSString *)name object:(id)object;
 {
+    return [self stepToWaitForNotificationName:name object:object timeout:KIFTestStepDefaultTimeout];
+}
+
++ (id)stepToWaitForNotificationName:(NSString *)name object:(id)object timeout:(NSTimeInterval)timeout;
+{
     NSString *description = [NSString stringWithFormat:@"Wait for notification \"%@\"", name];
     
     KIFTestStep *step = [self stepWithDescription:description executionBlock:^(KIFTestStep *step, NSError **error) {  
@@ -226,7 +233,32 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
         
         KIFTestWaitCondition(step.notificationOccurred, error, @"Waiting for notification \"%@\"", name);        
         return KIFTestStepResultSuccess;
-    }];   
+    }];
+    step.timeout = timeout;
+    return step;
+}
+
++ (id)stepToWaitForNotificationName:(NSString *)name object:(id)object whileExecutingStep:(KIFTestStep *)childStep;
+{
+    NSString *description = [NSString stringWithFormat:@"Wait for notification \"%@\" while executing child step \"%@\"", name, childStep];
+    
+    KIFTestStep *step = [self stepWithDescription:description executionBlock:^(KIFTestStep *step, NSError **error) {  
+        if (!step.observingForNotification) {            
+            step.notificationName = name;
+            step.notificationObject = object; 
+            step.observingForNotification = YES;
+            [[NSNotificationCenter defaultCenter] addObserver:step selector:@selector(_onObservedNotification:) name:name object:object];
+        }
+        
+        // Execute the step we are observing for changes
+        KIFTestStepResult result = [step.childStep executeAndReturnError:error];
+        KIFTestWaitCondition(result != KIFTestStepResultWait, error, @"Waiting for completion of child step \"%@\"", step.childStep);
+        
+        // Wait for the actual notification
+        KIFTestWaitCondition(step.notificationOccurred, error, @"Waiting for notification \"%@\"", name);
+        return KIFTestStepResultSuccess;
+    }];    
+    step.childStep = childStep;    
     return step;
 }
 
@@ -365,11 +397,13 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
             }
         }
         
-        // This is probably a UITextField- or UITextView-ish view, so make sure it worked
-        if ([view respondsToSelector:@selector(text)]) {
+        // This is probably a UITextField- or UITextView-ish view, so make sure it worked}        
+        SEL compare = ([view respondsToSelector:@selector(realText)] && [view performSelector:@selector(realText)] ? @selector(realText) : [view respondsToSelector:@selector(text)] ? @selector(text) : nil);
+
+        if (compare) {
             // We trim \n and \r because they trigger the return key, so they won't show up in the final product on single-line inputs
             NSString *expected = [expectedResult ? expectedResult : text stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-            NSString *actual = [[view performSelector:@selector(text)] stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+            NSString *actual = [[view performSelector:compare] stringByTrimmingCharactersInSet:[NSCharacterSet newlineCharacterSet]];
             KIFTestCondition([actual isEqualToString:expected], error, @"Failed to actually enter text \"%@\" in field; instead, it was \"%@\"", text, actual);
         }
         
@@ -490,7 +524,29 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
     }];
 }
 
-+ (id)stepToTapRowInTableViewWithAccessibilityLabel:(NSString*)tableViewLabel atIndexPath:(NSIndexPath *)indexPath
++ (id)stepToTapFirstAvailableRowInTableViewWithAccessibilityLabel:(NSString*)tableViewLabel; 
+{
+    NSString *description = [NSString stringWithFormat:@"Step to tap first available row in tableView with label %@", tableViewLabel];
+    return [KIFTestStep stepWithDescription:description executionBlock:^(KIFTestStep *step, NSError **error) {
+        UIAccessibilityElement *element = [[UIApplication sharedApplication] accessibilityElementWithLabel:tableViewLabel];
+        KIFTestCondition(element, error, @"View with label %@ not found", tableViewLabel);
+        UITableView *tableView = (UITableView*)[UIAccessibilityElement viewContainingAccessibilityElement:element];
+        
+        KIFTestCondition([tableView isKindOfClass:[UITableView class]], error, @"Specified view is not a UITableView");
+        
+        KIFTestCondition(tableView, error, @"Table view with label %@ not found", tableViewLabel);
+
+        KIFTestCondition([[tableView visibleCells] count] > 0, error, @"Table view with label %@ has no visible cells", tableViewLabel);
+
+        UITableViewCell *cell = [[tableView visibleCells] objectAtIndex:0];
+        CGRect cellFrame = [cell.contentView convertRect:[cell.contentView frame] toView:tableView];
+        [tableView tapAtPoint:CGPointCenteredInRect(cellFrame)];
+        
+        return KIFTestStepResultSuccess;
+    }];
+}
+
++ (id)stepToTapRowInTableViewWithAccessibilityLabel:(NSString*)tableViewLabel atIndexPath:(NSIndexPath *)indexPath;
 {
     NSString *description = [NSString stringWithFormat:@"Step to tap row %d in tableView with label %@", [indexPath row], tableViewLabel];
     return [KIFTestStep stepWithDescription:description executionBlock:^(KIFTestStep *step, NSError **error) {
@@ -588,6 +644,8 @@ static NSTimeInterval KIFTestStepDefaultTimeout = 10.0;
     notificationName = nil;
     [notificationObject release];
     notificationObject = nil;
+    [childStep release];
+    childStep = nil;
     
     [super dealloc];
 }
